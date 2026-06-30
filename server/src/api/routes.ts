@@ -20,8 +20,9 @@ api.get('/document', (_req, res) => {
 });
 
 /**
- * Run the pipeline over a document. STRUCTURE ONLY — the detectors and domain functions are
- * stubs for now, so this currently returns an empty/clean result. The wiring is what matters:
+ * Run the pipeline over a document and return the routed spans + the clean export. Layer 1
+ * (deterministic) auto-redacts structured PII; Layer 2 (semantic) returns [] when the local model
+ * is unavailable, so this endpoint always works end to end. The wiring is:
  * detect (Layer 1 + Layer 2) → reconcile → group → route → exportBuilder.
  */
 api.post('/detect', async (req, res) => {
