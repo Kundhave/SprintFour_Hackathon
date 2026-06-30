@@ -5,4 +5,12 @@ export { locateSpans, type SemanticFinding } from './locate';
 export { reconcile } from './reconciler';
 export { route } from './router';
 export { group } from './grouper';
-export { buildExport, type ExportResult } from './exportBuilder';
+export {
+  buildExport,
+  summarizeRemaining,
+  type ExportResult,
+  type ExportMode,
+  type DocSegment,
+  type RemainingSpan,
+  type RemainingCategory,
+} from './exportBuilder';

@@ -96,6 +96,57 @@ and a misjudgment signal to these judges; a `useReducer` over the single span st
 **Why:** local-first means the app needs no network at demo time — a *feature*, not a gap. Removes an
 on-stage failure mode and reinforces the privacy premise. The README documents the one command.
 
+## D16 — The export gate's count sentence is domain-computed and rides the ONE code path
+**Why:** D8 promises the preview is provably what ships, so the gate must not re-derive anything the
+real export doesn't also carry. The count sentence ("3 items will remain visible: a name you kept,
+and 2 things nothing flagged") is therefore computed inside `buildExport` and returned as
+`ExportResult.summary` — the same field `/api/export` and the preview both read. The UI only renders
+it (no presentation logic; CLAUDE.md §5), and the phrasing is asserted by tests rather than written
+by hand in a component.
+**Gain:** the number Sam reads is the same number on the bytes that leave; the felt-accountability
+wording is unit-tested. **Lose:** a string field on the result other callers ignore — trivial.
+**Why right:** the gate is Safety's last line (D8), so its honesty must be structural, not by
+convention. Grouping the count by *why* each item is still visible (undecided → reversed → kept →
+nothing-flagged) is the part that protects the overtrusting reader: it separates "you chose this"
+from "nothing ever flagged this," which is exactly the blind spot the whole product targets.
+
+## D17 — Every state routes THROUGH the gate, including empty and no-PII
+**Why:** the prompt is explicit — "no-PII-found (still route through the gate — that's when an
+overtrusting user most needs the preview)." The old export button was disabled with zero spans,
+which would have skipped the gate precisely in the most dangerous case (a reviewer trusting an empty
+result). The button now opens the gate as soon as detection has *loaded*, regardless of span count;
+the gate renders calm, explicit copy for empty document, nothing-flagged, all/mostly-redacted, and
+overlap-collapsed states. **Why right:** the gate's value is consequence-preview, not error-display;
+removing it when there's "nothing to show" removes it exactly when blind trust is highest.
+
+## D18 — Real PDF upload, text-based only; scanned PDFs are named, not silently dropped
+**Why:** the product had to graduate from a fixed fixture to a real document. Upload extracts text
+server-side (`documents/extractText.ts`) and the client holds the text in memory — no store, no
+persistence, no auth (CLAUDE.md §11/§12). We support text PDFs only and **detect** the no-selectable-
+text case (scanned/image PDFs), returning a clear "OCR not supported yet" message rather than an
+empty document. **Why right:** this is exactly D11 made visible — OCR is the deliberately-cut
+failure class, so the honest move is to name it at the moment a user hits it, not fail silently.
+
+## D19 — Output mode (anonymize vs redact) is a pure REPRESENTATION choice in the domain
+**Why:** the two modes change only how a removed span is *rendered* — a `[TYPE]` label or a black
+box — never *which* spans are removed. So `buildExport` gained a `mode` and now emits a render-
+agnostic `segments` model; the router and the never-auto-expose invariant are untouched. Mode lives
+in the one code path, so preview and export agree by construction (D8). **Gave up:** nothing in the
+routing philosophy. **Why right:** keeping mode out of detection/routing preserves the architecture's
+center (D13) and keeps the safety logic in exactly one place.
+
+## D20 — PDF rendering is an I/O adapter, not domain logic; integrity proven by re-extraction
+**Why:** drawing a PDF is I/O, so `documents/renderPdf.ts` sits at the edge beside the detectors,
+consuming the domain's pure `segments`. Crucially, a redacted segment carries only `{type, length}`
+— never the original bytes — so raw PII *cannot* reach any renderer. For redact mode the PII text is
+never drawn at all; a real black rectangle is, so the export is genuinely processed content, not a
+CSS overlay (D9). The integrity test renders a PDF and **reads it back** to assert the raw PII is
+absent from the actual exported bytes — the strongest form of the D9 guarantee.
+**Dependencies added:** `pdf-parse` (extraction) and `pdf-lib` (generation) — both local, no network,
+preserving the local-first mandate (CLAUDE.md §11).
+
+
+
 ---
 
 ## What we deliberately did NOT build (and why) — writeup core

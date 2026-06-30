@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/components/AutoTray.tsx","./src/components/ExportGate.tsx","./src/components/ModeStep.tsx","./src/components/ReviewLane.tsx","./src/components/StepBar.tsx","./src/components/UploadStep.tsx","./src/store/selectors.ts","./src/store/spanStore.ts","./src/store/types.ts"],"version":"5.9.3"}
