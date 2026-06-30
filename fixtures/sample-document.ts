@@ -16,6 +16,8 @@
  * source ourselves (see CLAUDE.md §9).
  */
 
+import type { SemanticFinding } from '../server/src/domain/locate';
+
 export const sampleDocument = `From: Sam Carter <sam.carter@northbridge-legal.com>
 To: Intake Team
 Subject: Client onboarding — file 4471
@@ -41,5 +43,21 @@ As always, keep the working notes in the shared folder and flag anything unusual
 Thanks,
 Sam
 `;
+
+/**
+ * Demo-day fallback (CLAUDE.md §5): the semantic findings the local LLM would return for the
+ * sample document — strings + type + confidence, NO offsets (we locate them ourselves). The Mock
+ * uses these so the contextual review lane is populated even when Ollama is unavailable. These are
+ * contextual types, so the router always sends them to the human — never auto-redacted.
+ */
+export const sampleSemanticFindings: SemanticFinding[] = [
+  { text: 'Sam Carter', type: 'NAME', confidence: 0.96 },
+  { text: 'Maria Gonzalez', type: 'NAME', confidence: 0.95 },
+  { text: 'David Okafor', type: 'NAME', confidence: 0.93 },
+  { text: 'Hatcher & Wynn LLP', type: 'ORG', confidence: 0.9 },
+  { text: '1942 Marlowe Avenue, Apt 6B, San Francisco, CA 94110', type: 'ADDRESS', confidence: 0.92 },
+  { text: 'March 3, 2024', type: 'DATE', confidence: 0.78 },
+  { text: 'April 12, 2024', type: 'DATE', confidence: 0.78 },
+];
 
 export default sampleDocument;

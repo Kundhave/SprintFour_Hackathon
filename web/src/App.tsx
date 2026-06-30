@@ -1,87 +1,174 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useReducer, useState } from 'react';
+import { spanReducer, initialState } from './store/spanStore';
+import { selectReviewGroups, selectAutoGroups, selectAutoCount } from './store/selectors';
+import { ReviewLane } from './components/ReviewLane';
+import { AutoTray } from './components/AutoTray';
+import { UploadStep } from './components/UploadStep';
+import { ModeStep } from './components/ModeStep';
+import { ExportGate } from './components/ExportGate';
+import { StepBar, type FlowStep } from './components/StepBar';
+import type { ExportMode, Span } from './store/types';
 
 /**
- * App shell (Presentation layer — CLAUDE.md §5). Renders state; contains NO product logic.
+ * App shell (Presentation layer — CLAUDE.md §5). Owns only the workflow position and the single span
+ * store, and derives every view from them. All review decisions are reversible status toggles. No
+ * product logic lives here — detection, routing, and the export build all happen server-side in the
+ * pure domain core.
  *
- * The thinnest end-to-end slice of the thesis: it loads the sample document, asks the backend to
- * run the pipeline, and shows the document with the auto-redactions ALREADY APPLIED — the structured
- * PII is gone, replaced by typed markers, not visually covered. The Export button downloads exactly
- * that text, so what you see is what ships (preview and export share one code path on the server).
+ * Flow: Upload PDF → Choose output mode → Detection pipeline → Review ambiguous → Preview → Export.
  */
-
-type ExportResult = { text: string; redactedCount: number; visibleCount: number };
-type DetectResponse = { spans: unknown[]; export: ExportResult };
-
 export default function App() {
-  const [result, setResult] = useState<DetectResponse | null>(null);
+  const [step, setStep] = useState<FlowStep>('upload');
+  const [text, setText] = useState('');
+  const [mode, setMode] = useState<ExportMode>('redact');
+  const [state, dispatch] = useReducer(spanReducer, initialState);
+  const [detecting, setDetecting] = useState(false);
+  const [gateOpen, setGateOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch('/api/detect', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}', // no text → the server runs the canonical sample document
-    })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<DetectResponse>;
-      })
-      .then(setResult)
-      .catch(() => setError('Could not reach the backend — is `npm run dev` running?'));
-  }, []);
+  const reviewGroups = useMemo(() => selectReviewGroups(state.spans, text), [state.spans, text]);
+  const autoGroups = useMemo(() => selectAutoGroups(state.spans), [state.spans]);
+  const autoCount = useMemo(() => selectAutoCount(state.spans), [state.spans]);
 
-  function handleExport() {
-    if (!result) return;
-    const blob = new Blob([result.export.text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'redacted.txt';
-    a.click();
-    URL.revokeObjectURL(url);
+  function handleUploaded(uploadedText: string) {
+    setText(uploadedText);
+    setStep('mode');
   }
 
-  const redactedCount = result?.export.redactedCount ?? 0;
+  async function handleChooseMode(chosen: ExportMode) {
+    setMode(chosen);
+    setStep('review');
+    setDetecting(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/detect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { spans: Span[] };
+      dispatch({ type: 'init', spans: data.spans });
+    } catch {
+      setError('Detection failed — is the backend running?');
+    } finally {
+      setDetecting(false);
+    }
+  }
+
+  function startOver() {
+    setStep('upload');
+    setText('');
+    setGateOpen(false);
+    setError(null);
+    dispatch({ type: 'init', spans: [] });
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 p-8">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-3xl space-y-6">
         <header className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Conseal Review</h1>
             <p className="mt-1 text-sm text-slate-600">
-              Structured PII was auto-redacted with certainty and genuinely removed from the text —
-              not visually covered.
+              The catchable redactions are done for you. You only decide the calls a machine can't make.
             </p>
           </div>
-          <button
-            onClick={handleExport}
-            disabled={!result}
-            className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40"
-          >
-            Export clean text
-          </button>
+          {step !== 'upload' && (
+            <button
+              onClick={startOver}
+              className="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            >
+              Start over
+            </button>
+          )}
         </header>
 
+        <StepBar current={step} />
+
         {error && (
-          <div className="mt-6 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">
+          <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-200">
             {error}
           </div>
         )}
 
-        {!error && !result && <p className="mt-6 text-sm text-slate-500">Running detection…</p>}
+        {step === 'upload' && <UploadStep onLoaded={handleUploaded} />}
 
-        {result && (
-          <>
-            <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
-              {redactedCount} item{redactedCount === 1 ? '' : 's'} auto-redacted
-            </div>
-            <pre className="mt-4 whitespace-pre-wrap rounded-xl bg-white p-6 font-mono text-sm leading-relaxed text-slate-800 shadow-sm ring-1 ring-slate-200">
-              {result.export.text}
-            </pre>
-          </>
+        {step === 'mode' && <ModeStep onChoose={handleChooseMode} />}
+
+        {step === 'review' && (
+          <ReviewStep
+            detecting={detecting}
+            autoGroups={autoGroups}
+            autoCount={autoCount}
+            reviewGroups={reviewGroups}
+            onReverse={(groupKey) => dispatch({ type: 'reverseAuto', groupKey })}
+            onDecide={(groupKey, decision) => dispatch({ type: 'decide', groupKey, decision })}
+            onContinue={() => setGateOpen(true)}
+          />
         )}
       </div>
+
+      {gateOpen && (
+        <ExportGate text={text} spans={state.spans} mode={mode} onClose={() => setGateOpen(false)} />
+      )}
     </main>
+  );
+}
+
+/** Steps 4 + 5 — auto-handled disclosure and the human review lane, plus the gate entry point. */
+function ReviewStep({
+  detecting,
+  autoGroups,
+  autoCount,
+  reviewGroups,
+  onReverse,
+  onDecide,
+  onContinue,
+}: {
+  detecting: boolean;
+  autoGroups: ReturnType<typeof selectAutoGroups>;
+  autoCount: number;
+  reviewGroups: ReturnType<typeof selectReviewGroups>;
+  onReverse: (groupKey: string) => void;
+  onDecide: (groupKey: string, decision: 'hide' | 'keep') => void;
+  onContinue: () => void;
+}) {
+  if (detecting) {
+    return (
+      <p className="rounded-lg bg-white px-4 py-10 text-center text-sm text-slate-500 ring-1 ring-slate-200">
+        Running detection — auto-handling the obvious, isolating the ambiguous…
+      </p>
+    );
+  }
+
+  const undecided = reviewGroups.filter((g) => g.decision === 'undecided').length;
+
+  return (
+    <div className="space-y-6">
+      {reviewGroups.length === 0 && autoCount === 0 && (
+        <p className="rounded-lg bg-white px-4 py-3 text-sm text-slate-600 ring-1 ring-slate-200">
+          Nothing was flagged in this document. You can still preview exactly what ships before you
+          export.
+        </p>
+      )}
+
+      <AutoTray groups={autoGroups} count={autoCount} onReverse={onReverse} />
+      <ReviewLane groups={reviewGroups} onDecide={onDecide} />
+
+      <div className="flex items-center justify-between rounded-xl bg-white px-4 py-3 ring-1 ring-slate-200">
+        <p className="text-sm text-slate-600">
+          {undecided === 0
+            ? 'All review decisions made. Preview the result before exporting.'
+            : `${undecided} item${undecided === 1 ? '' : 's'} still undecided — you can preview now or decide first.`}
+        </p>
+        <button
+          onClick={onContinue}
+          className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+        >
+          Preview &amp; export →
+        </button>
+      </div>
+    </div>
   );
 }

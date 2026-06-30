@@ -53,15 +53,16 @@ The redacted PII is **genuinely removed** from the exported file, never just vis
 Three clean layers, with the thinking concentrated in a pure, well-tested domain core:
 
 ```
-Presentation (React)   →  review lane · auto-handled tray · export gate
+Presentation (React)   →  upload · output mode · review lane · auto-handled tray · preview/export gate
                           (renders state; contains no logic)
 
-Domain (pure, tested)  →  router · reconciler · grouper · exportBuilder
+Domain (pure, tested)  →  router · reconciler · grouper · exportBuilder (mode-aware segments)
                           (this is the product; this is where the tests live)
 
-Detection              →  Deterministic detector (regex + small name list)
+Detection / Documents  →  Deterministic detector (regex + small name list)
                           Semantic detector (local LLM via Ollama)
                           Mock detector (same interface; tests + demo fallback)
+                          PDF text extraction + PDF rendering (I/O adapters at the edge)
 ```
 
 **Two detectors, by comparative advantage — not primary and backup.** The deterministic detector
@@ -94,11 +95,14 @@ npm install
 npm run dev
 ```
 
-Then open the printed local URL. Load the sample document and walk through: auto-handled redactions
-(including the phone number the tool "missed"), the ambiguous review lane, and the export gate.
+Then open the printed local URL and walk the workflow: **upload a text-based PDF** (or click "Try
+the sample document"), **choose an output mode** (anonymize or true redaction), let the pipeline
+auto-handle the obvious structured PII, **review only the ambiguous items**, then **preview and
+export** the processed PDF — what you preview is exactly what ships.
 
 > No internet connection is required. If the local model is unavailable on your machine, the app
-> falls back to a built-in **mock detector** (same interface) so the experience still runs end to end.
+> still runs end to end: Layer 1 (deterministic) catches structured PII, and the sample document
+> falls back to a built-in **mock detector** for its contextual review lane.
 
 ## Tech stack
 
